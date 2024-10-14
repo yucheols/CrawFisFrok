@@ -44,23 +44,26 @@ gc()
 rasterOptions(tmpdir = 'tmpdir', progress = 'text', chunksize = 1e+07, maxmemory = 1e+09)
 
 # increase Java heap space
-options(java.parameters = "-Xmx8g")
+options(java.parameters = "-Xmx10g")
 
 # set random seed
 set.seed(9)
 
 # load packages we do {CLAP}
 library(ENMeval)
+library(ENMwrap)
 library(megaSDM)
 library(raster)
 library(sf)
 library(dplyr)
 library(rasterVis)
+library(rnaturalearth)
+library(tigris)
 
 #####  part 1 ::: get environmental data  ----------
 
 # define clipping extent
-ext <- c(-105.018,-84.675,28.311,44.003)
+ext <- c(-108.8371,-78.6800,19.0456,50.2829)
 
 # WorldClim 5km raster
 clim <- raster::stack(list.files(path = 'E:/env layers/CHELSA_cur_V1_2B_r30s/30sec/', pattern = '.tif$', full.names = T))
@@ -76,6 +79,10 @@ for (i in 1:nlayers(clim)) {
   r <- clim[[i]]
   raster::writeRaster(r, paste0('clim_processed/', names(clim)[i], '.bil'), overwrite = T)
 }
+
+# import shortcut
+clim <- raster::stack(list.files(path = 'clim_processed/', pattern = '.bil$', full.names = T))
+
 
 #####  part 2 ::: get occurrence points  ----------
 
@@ -98,9 +105,18 @@ head(cfis)
 points(cfis)
 nrow(cfis)
 
+# export thinned
+write.csv(cfis, 'occs/cfis_thinned.csv')
+
 
 #####  part 3 ::: background data  ----------
-bg <- dismo::randomPoints(mask = clim[[1]], n = 10000, p = cfis, excludep = T) %>% as.data.frame()
+
+# generate buffer == 300 km around the occurrence points
+buff <- ENMwrap::buff_maker(occs_list = list(cfis), envs = clim[[1]], buff_dist = 300000)
+plot(buff[[1]], border = 'blue', lwd = 2, add = T)
+
+# sample bg
+bg <- ENMwrap::bg_sampler(envs = clim[[1]], n = 10000, occs_list = list(cfis), buffer_list = buff, method = 'buffer') %>% dplyr::bind_rows()
 colnames(bg) = colnames(cfis)
 head(bg)
 
@@ -115,10 +131,10 @@ cor.mat <- raster::extract(clim, bg) %>% cor()
 print(cor.mat) 
 
 # run correlation test
-ntbox::correlation_finder(cor_mat = cor.mat, threshold = 0.75, verbose = T)
+ntbox::correlation_finder(cor_mat = cor.mat, threshold = 0.70, verbose = T)
 
 # select low cor variables
-clim.subs <- raster::stack(subset(clim, c('bio1', 'bio3', 'bio5', 'bio8', 'bio12', 'bio18')))
+clim.subs <- raster::stack(subset(clim, c('bio1','bio3','bio5','bio8','bio12','bio18')))
 print(clim.subs)
 
 
@@ -131,7 +147,7 @@ cfis_mod <- ENMevaluate(taxon.name = 'crawfisfrok',
                         envs = clim.subs, 
                         bg = bg, 
                         tune.args = list(fc = c('L','LQ','H','LQH','LQHP','LQHPT'), 
-                                         rm = seq(1,5, by = 0.5)),
+                                         rm = seq(1, 4, by = 0.5)),
                         partitions = 'block',
                         partition.settings = list(orientation = 'lat_lon'),
                         algorithm = 'maxent.jar',
@@ -149,32 +165,47 @@ print(cfis_res)
 write.csv(cfis_res, 'outputs/models/crawfisfrok_tuning_results.csv')
 
 # find optimal model
-cfis_opt <- cfis_res %>%
+cfis_oco <- cfis_res %>%
   dplyr::filter(or.10p.avg == min(or.10p.avg)) %>%
   dplyr::filter(auc.diff.avg == min(auc.diff.avg)) %>%
-  dplyr::filter(auc.val.avg == max(auc.val.avg))
+  dplyr::filter(auc.val.avg == max(auc.val.avg)) %>%
+  print()
 
 # check variable contribution
-cfis_contrib <- eval.variable.importance(cfis_mod)[[cfis_opt$tune.args]]
+cfis_contrib <- eval.variable.importance(cfis_mod)[[cfis_oco$tune.args]]
 print(cfis_contrib)
 
-write.csv(cfis_contrib, 'outputs/contrib/crawfisfrok_optmodel_contrib.csv')
+write.csv(cfis_contrib, 'outputs/contrib/crawfisfrok_ocomodel_contrib.csv')
 
 # look at the prediction map
-cfis_opt_pred <- eval.predictions(cfis_mod)[[cfis_opt$tune.args]]
-plot(cfis_opt_pred)
+cfis_oco_pred <- eval.predictions(cfis_mod)[[cfis_oco$tune.args]]
+plot(cfis_oco_pred)
 
-writeRaster(cfis_opt_pred, 'outputs/preds/crawfisfrok_optmodel_pred.tif')
+writeRaster(cfis_oco_pred, 'outputs/preds/crawfisfrok_ocomodel_pred.tif')
 
 
 #####  part 6 ::: response curves ----------
 
 # resp curve data
-cfis_resp_data <- ENMwrap::resp_data_pull(sp.name = 'crawfisfrok', model = eval.models(cfis_mod)[[cfis_opt$tune.args]], names.var = names(clim.subs))
+cfis_resp_data <- ENMwrap::resp_data_pull(sp.name = 'crawfisfrok', model = eval.models(cfis_mod)[[cfis_oco$tune.args]], names.var = names(clim.subs))
 head(cfis_resp_data)
 
+# reorder plotting order
+cfis_resp_data$var <- factor(cfis_resp_data$var, levels = c('bio1', 'bio3', 'bio5', 'bio8', 'bio12', 'bio18'))
+
 # plot response
-ENMwrap::plot_response(resp.data = cfis_resp_data)
+ENMwrap::plot_response(resp.data = cfis_resp_data) +
+  theme(axis.title = element_text(size = 16, face = 'bold'),
+        axis.title.x = element_text(margin = margin(t = 20)),
+        axis.title.y = element_text(margin = margin(r = 20)),
+        axis.text = element_text(size = 14),
+        strip.text = element_text(size = 16),
+        legend.title = element_text(size = 16, face = 'bold'),
+        legend.text = element_text(size = 16, face = 'italic'),
+        legend.position = 'top')
+
+# export response curves
+ggsave('outputs/plots/cfis_resp_curves.png', width = 30, height = 22, dpi = 800, units = 'cm')
 
 
 #####  part 7 ::: hindcasting ----------
@@ -194,14 +225,44 @@ print(lgm)
 ENMwrap::unit_check(ref.env = clim.subs, proj.env = lgm, n = 10000)
 
 # it o'co proceed to projection
-cfis_lgm <- dismo::predict(object = eval.models(cfis_mod)[[cfis_opt$tune.args]], x = lgm, progress = 'text')
+cfis_lgm <- dismo::predict(object = eval.models(cfis_mod)[[cfis_oco$tune.args]], x = lgm, progress = 'text')
 plot(cfis_lgm)
+
+# export LGM prediction
+writeRaster(cfis_lgm, 'outputs/preds/cfis_LGM_pred.tif', overwrite = T)
 
 
 #####  part 8 ::: plot predictions ----------
 
-# stack them
-preds <- raster::stack(cfis_opt_pred, cfis_lgm)
+###  prep global polygon data
+# get polygon data
+glob_poly <- ne_countries(scale = 'small', returnclass = 'sf')
+glob_poly <- st_transform(glob_poly, crs = crs(clim.subs))
+
+# check geometry
+st_is_valid(glob_poly, reason = T)
+
+# fix invalid geometry
+sf_use_s2(F)
+glob_poly <- st_make_valid(glob_poly)
+
+# crop to the modeling extent
+poly_bbox <- st_bbox(extent(clim.subs), crs = st_crs(glob_poly))
+poly_cropped <- st_crop(glob_poly, poly_bbox)
+
+
+### prep US polygon data
+# get data
+us_states <- states()
+us_states <- st_transform(us_states, crs = crs(clim.subs))
+
+# crop
+us_states_crop <- st_crop(us_states, poly_bbox)
+
+
+###  plot
+# stack preds
+preds <- raster::stack(cfis_oco_pred, cfis_lgm)
 names(preds) = c('Current', 'LGM')
 
 # plot
@@ -209,12 +270,15 @@ gplot(preds) +
   geom_tile(aes(fill = value)) + 
   coord_equal() + 
   facet_wrap(~ variable, ncol = 2, nrow = 1) + 
+  scale_x_continuous(breaks = seq(-108, -79, by = 7)) +
   scale_fill_gradientn(colors = rev(as.vector(pals::ocean.thermal(1000))), 
                        na.value = NA, 
                        name = "Suitability", 
                        breaks = c(0.1, 0.9), 
                        labels = c(paste0("Low: ", 0.1), paste0("High: ", 0.9))) + 
   xlab("Longitude") + ylab("Latitude") + 
+  geom_sf(data = poly_cropped, inherit.aes = F, fill = NA, color = 'darkgrey', lwd = 0.5) +
+  geom_sf(data = us_states_crop, inherit.aes = F, fill = NA, color = 'darkgrey', lwd = 0.5) +
   theme_bw() + 
   theme(strip.text = element_text(size = 14), 
         legend.title = element_text(size = 14, face = "bold", margin = margin(b = 10)), 
@@ -225,5 +289,39 @@ gplot(preds) +
         axis.text = element_text(size = 12))
 
 # export
-ggsave('outputs/plots/preds_output.png', width = 20, height = 8, dpi = 600, units = 'cm')
+ggsave('outputs/plots/preds_output.png', width = 26, height = 15, dpi = 600, units = 'cm')
 
+
+#####  part 8 ::: MESS ----------
+
+# run MESS
+cfis_mess <- ntbox::ntb_mess(M_stack = clim.subs, G_stack = lgm)
+print(cfis_mess)
+
+# plot MESS
+gplot(cfis_mess) +
+  geom_tile(aes(fill = value)) + 
+  coord_equal() + 
+  scale_fill_gradientn(colors = as.vector(pals::coolwarm(1000)), 
+                       na.value = NA,
+                       breaks = c(-75, 60),
+                       labels = c('Low', 'High'),
+                       name = "MESS", 
+                       trans = 'reverse') +
+  xlab("Longitude") + ylab("Latitude") +
+  geom_sf(data = poly_cropped, inherit.aes = F, fill = NA, color = 'darkgrey', lwd = 0.5) +
+  geom_sf(data = us_states_crop, inherit.aes = F, fill = NA, color = 'darkgrey', lwd = 0.5) +
+  theme_bw()+
+  theme(strip.text = element_text(size = 14, face = "italic"), 
+        legend.title = element_text(size = 14, face = "bold", margin = margin(b = 10)), 
+        legend.text = element_text(size = 12), 
+        axis.title = element_text(size = 14, face = "bold"), 
+        axis.title.x = element_text(margin = margin(t = 15)), 
+        axis.title.y = element_text(margin = margin(r = 15)), 
+        axis.text = element_text(size = 12))
+
+# export the plot
+ggsave('outputs/plots/MESS.png', width = 20, height = 18, dpi = 600, units = 'cm')
+
+# export the MESS layer
+writeRaster(cfis_mess, 'outputs/MESS/cfis_MESS.tif')

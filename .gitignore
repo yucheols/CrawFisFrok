@@ -50,3 +50,4 @@ rsconnect/
 
 clim_processed/
 outputs/models/crawfisfrok_tuning.rds
+tmpdir/
