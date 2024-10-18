@@ -164,7 +164,7 @@ print(cfis_res)
 
 write.csv(cfis_res, 'outputs/models/crawfisfrok_tuning_results.csv')
 
-# find optimal model
+# find optimal model == which model is o'co??
 cfis_oco <- cfis_res %>%
   dplyr::filter(or.10p.avg == min(or.10p.avg)) %>%
   dplyr::filter(auc.diff.avg == min(auc.diff.avg)) %>%
