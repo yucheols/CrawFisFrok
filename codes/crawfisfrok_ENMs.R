@@ -57,6 +57,7 @@ library(raster)
 library(sf)
 library(dplyr)
 library(rasterVis)
+library(ggplot2)
 library(rnaturalearth)
 library(tigris)
 
@@ -181,7 +182,7 @@ write.csv(cfis_contrib, 'outputs/contrib/crawfisfrok_ocomodel_contrib.csv')
 cfis_oco_pred <- eval.predictions(cfis_mod)[[cfis_oco$tune.args]]
 plot(cfis_oco_pred)
 
-writeRaster(cfis_oco_pred, 'outputs/preds/crawfisfrok_ocomodel_pred.tif')
+writeRaster(cfis_oco_pred, 'outputs/preds/crawfisfrok_ocomodel_pred.tif', overwrite = T)
 
 
 #####  part 6 ::: response curves ----------
@@ -305,8 +306,8 @@ gplot(cfis_mess) +
   scale_fill_gradientn(colors = as.vector(pals::coolwarm(1000)), 
                        na.value = NA,
                        breaks = c(-75, 60),
-                       labels = c('Low', 'High'),
-                       name = "MESS", 
+                       labels = c('High', 'Low'),
+                       name = "MESS",
                        trans = 'reverse') +
   xlab("Longitude") + ylab("Latitude") +
   geom_sf(data = poly_cropped, inherit.aes = F, fill = NA, color = 'darkgrey', lwd = 0.5) +
@@ -324,4 +325,4 @@ gplot(cfis_mess) +
 ggsave('outputs/plots/MESS.png', width = 20, height = 18, dpi = 600, units = 'cm')
 
 # export the MESS layer
-writeRaster(cfis_mess, 'outputs/MESS/cfis_MESS.tif')
+writeRaster(cfis_mess, 'outputs/MESS/cfis_MESS.tif', overwrite = T)
