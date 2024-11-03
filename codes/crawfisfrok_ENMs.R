@@ -270,27 +270,28 @@ names(preds) = c('Current', 'LGM')
 gplot(preds) + 
   geom_tile(aes(fill = value)) + 
   coord_equal() + 
-  facet_wrap(~ variable, ncol = 2, nrow = 1) + 
+  facet_wrap(~ variable, ncol = 1, nrow = 2) + 
   scale_x_continuous(breaks = seq(-108, -79, by = 7)) +
   scale_fill_gradientn(colors = rev(as.vector(pals::ocean.thermal(1000))), 
                        na.value = NA, 
                        name = "Suitability", 
                        breaks = c(0.1, 0.9), 
-                       labels = c(paste0("Low: ", 0.1), paste0("High: ", 0.9))) + 
+                       labels = c(0.1, 0.9)) + 
   xlab("Longitude") + ylab("Latitude") + 
   geom_sf(data = poly_cropped, inherit.aes = F, fill = NA, color = 'darkgrey', lwd = 0.5) +
   geom_sf(data = us_states_crop, inherit.aes = F, fill = NA, color = 'darkgrey', lwd = 0.5) +
   theme_bw() + 
   theme(strip.text = element_text(size = 14), 
-        legend.title = element_text(size = 14, face = "bold", margin = margin(b = 10)), 
+        legend.title = element_text(size = 14, face = "bold", margin = margin(b = 10, r = 10)), 
         legend.text = element_text(size = 12), 
+        legend.position = 'top',
         axis.title = element_text(size = 14, face = "bold"), 
         axis.title.x = element_text(margin = margin(t = 15)), 
         axis.title.y = element_text(margin = margin(r = 15)), 
         axis.text = element_text(size = 12))
 
 # export
-ggsave('outputs/plots/preds_output.png', width = 26, height = 15, dpi = 600, units = 'cm')
+ggsave('outputs/plots/preds_output.png', width = 10, height = 25, dpi = 600, units = 'cm')
 
 
 #####  part 8 ::: MESS ----------
