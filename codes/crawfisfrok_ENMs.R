@@ -263,8 +263,8 @@ us_states_crop <- st_crop(us_states, poly_bbox)
 
 ###  plot
 # stack preds
-preds <- raster::stack(cfis_oco_pred, cfis_lgm)
-names(preds) = c('Current', 'LGM')
+preds <- raster::stack(cfis_lgm, cfis_oco_pred)
+names(preds) = c('LGM', 'Current')
 
 # plot
 gplot(preds) + 
